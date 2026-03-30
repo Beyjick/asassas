@@ -1,10 +1,10 @@
-if not game:GetService("RunService"):IsStudio() then
-    local CoreUI = game.CoreGui
-    local PurchasePrompt = CoreUI:FindFirstChild("PurchasePromptApp")
-    if PurchasePrompt then
-        PurchasePrompt:Destroy()
+pcall(function()
+    local CoreGui = game:GetService("CoreGui")
+    local prompt = CoreGui:FindFirstChild("PurchasePromptApp")
+    if prompt then
+        prompt:Destroy()
     end
-end
+end)
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -69,6 +69,12 @@ local UseDevTags = true
 -- ====================================================
 local function formatNumber(n)
     return tostring(math.floor(n)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+local function updateBalanceUI()
+    if rText then
+        rText.Text = formatNumber(CurrentBalance)
+    end
 end
 
 local function makeDraggable(frame)
@@ -199,8 +205,11 @@ clickTrap.Size = UDim2.new(1, 0, 1, 0)
 clickTrap.BackgroundTransparency = 1
 clickTrap.Text = ""
 clickTrap.Visible = false 
-clickTrap.ZIndex = 1 
+clickTrap.ZIndex = 1000
 clickTrap.Parent = gui
+clickTrap.Active = true
+clickTrap.Selectable = false
+clickTrap.AutoButtonColor = false
 
 -- ====================================================
 -- 2. SETUP WINDOW (Redesigned "Card" Style + Identity)
@@ -214,9 +223,6 @@ setFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 setFrame.BorderSizePixel = 0
 setFrame.ZIndex = 10
 setFrame.Parent = gui
-
-Instance.new("UICorner", setFrame).CornerRadius = UDim.new(0, 12)
-makeDraggable(setFrame)
 
 Instance.new("UICorner", setFrame).CornerRadius = UDim.new(0, 12)
 makeDraggable(setFrame)
@@ -668,18 +674,18 @@ end)
 -- ====================================================
 
 local function toggleOverlay(show)
-    modalOverlay.Visible = true
-    local targetAlpha = show and 0.6 or 1
-    local tInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    
-    local tween = TweenService:Create(modalOverlay, tInfo, {BackgroundTransparency = targetAlpha})
-    tween:Play()
-    
-    if not show then
-        tween.Completed:Connect(function()
-            if modalOverlay.BackgroundTransparency == 1 then
-                modalOverlay.Visible = false
-            end
+    if show then
+        modalOverlay.Visible = true
+        TweenService:Create(modalOverlay, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.6
+        }):Play()
+    else
+        TweenService:Create(modalOverlay, TweenInfo.new(0.2), {
+            BackgroundTransparency = 1
+        }):Play()
+
+        task.delay(0.2, function()
+            modalOverlay.Visible = false
         end)
     end
 end
@@ -862,7 +868,7 @@ setBtn.MouseButton1Click:Connect(function()
     if bVal then 
         CurrentBalance = bVal 
     end
-    rText.Text = formatNumber(CurrentBalance)
+    updateBalanceUI()
 end)
 
 RunService.Heartbeat:Connect(function()
@@ -873,7 +879,9 @@ RunService.Heartbeat:Connect(function()
         return 
     end
 
-    if ButtonInfo.Visible and not buyFrame.Visible and not successFrame.Visible then
+    local isActive = (ButtonInfo and ButtonInfo:IsDescendantOf(game))
+
+    if isActive and not buyFrame.Visible and not successFrame.Visible then
         clickTrap.Visible = true
     else
         clickTrap.Visible = false
@@ -889,7 +897,12 @@ clickTrap.Activated:Connect(function()
         return 
     end
 
-    local priceLabel = ButtonInfo:FindFirstChild("Price") and ButtonInfo.Price:FindFirstChild("TextLabel")
+    local priceLabel = nil
+local priceObj = ButtonInfo:FindFirstChild("Price")
+
+if priceObj then
+    priceLabel = priceObj:FindFirstChildWhichIsA("TextLabel")
+end
     local iconLabel  = ButtonInfo:FindFirstChild("Icon") and ButtonInfo.Icon:FindFirstChild("ImageLabel")
     
     ItemName = "Gamepass" 
@@ -911,7 +924,10 @@ clickTrap.Activated:Connect(function()
         end
     end
 
-    local rawPrice = priceLabel and priceLabel.Text or "0"
+    local rawPrice = "0"
+if priceLabel and priceLabel:IsA("TextLabel") then
+    rawPrice = priceLabel.Text
+end
     local cleanPrice = string.gsub(rawPrice, "%D", "")
     ItemPrice = tonumber(cleanPrice) or 0
     pText.Text = formatNumber(ItemPrice)
@@ -983,7 +999,7 @@ buyBtn.Activated:Connect(function()
     fadeGroup(successFrame, 1, TweenInfo.new(0)) -- Instant hidden state
     
     CurrentBalance = CurrentBalance - ItemPrice
-    rText.Text = formatNumber(CurrentBalance)
+    updateBalanceUI()
     
     -- Smooth synced pop-in for Success Window
     local fadeInInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
