@@ -879,9 +879,17 @@ RunService.Heartbeat:Connect(function()
         return 
     end
 
-    local isActive = (ButtonInfo and ButtonInfo:IsDescendantOf(game))
+    local validTarget = false
 
-    if isActive and not buyFrame.Visible and not successFrame.Visible then
+    -- ONLY allow if ButtonInfo is actually showing a real item
+    if ButtonInfo
+        and ButtonInfo:IsDescendantOf(game)
+        and ButtonInfo:FindFirstChild("Price")
+        and ButtonInfo:FindFirstChild("ItemName") then
+        validTarget = true
+    end
+
+    if validTarget and not buyFrame.Visible and not successFrame.Visible then
         clickTrap.Visible = true
     else
         clickTrap.Visible = false
@@ -889,6 +897,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 clickTrap.Activated:Connect(function()
+    if not ButtonInfo or not ButtonInfo.Parent then return end
     if debounce then return end
     if not ButtonInfo then return end
 
