@@ -199,7 +199,7 @@ clickTrap.Size = UDim2.new(1, 0, 1, 0)
 clickTrap.BackgroundTransparency = 1
 clickTrap.Text = ""
 clickTrap.Visible = false 
-clickTrap.ZIndex = 5 
+clickTrap.ZIndex = 1 
 clickTrap.Parent = gui
 
 -- ====================================================
@@ -515,7 +515,7 @@ buyBtn.BackgroundColor3 = Colors.ButtonBase
 buyBtn.Size = UDim2.new(0.9, 0, 0, 42.5) 
 buyBtn.Position = UDim2.new(0.05, 0, 0.73, 0)
 buyBtn.ClipsDescendants = true
-buyBtn.ZIndex = 11
+buyBtn.ZIndex = 20
 buyBtn.AutoButtonColor = false 
 buyBtn.Parent = buyFrame
 Instance.new("UICorner", buyBtn).CornerRadius = UDim.new(0, 8)
@@ -536,7 +536,7 @@ btnLabel.TextSize = 20
 btnLabel.TextColor3 = Colors.White
 btnLabel.BackgroundTransparency = 1
 btnLabel.Size = UDim2.new(1, 0, 1, 0)
-btnLabel.ZIndex = 13
+btnLabel.ZIndex = 21
 btnLabel.Parent = buyBtn
 
 -- ====================================================
@@ -880,7 +880,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-clickTrap.MouseButton1Click:Connect(function()
+clickTrap.Activated:Connect(function()
     if debounce then return end
     if not ButtonInfo then return end
 
@@ -951,7 +951,7 @@ clickTrap.MouseButton1Click:Connect(function()
     end)
 end)
 
-buyBtn.MouseButton1Click:Connect(function()
+buyBtn.Activated:Connect(function()
     if not ButtonLoaded then return end
     if not buyFrame.Visible or debounce then return end
     debounce = true 
@@ -1020,7 +1020,7 @@ local function closeAll()
     debounce = false
 end
 
-okBtn.MouseButton1Click:Connect(function()
+okBtn.Activated:Connect(function()
     if not successFrame.Visible or debounce then return end
     debounce = true 
     
@@ -1049,5 +1049,5 @@ okBtn.MouseButton1Click:Connect(function()
     playGiftAnimation()
 end)
 
-closeX.MouseButton1Click:Connect(closeAll)
-sX.MouseButton1Click:Connect(closeAll)
+closeX.Activated:Connect(closeAll)
+sX.Activated:Connect(closeAll)
