@@ -28,7 +28,16 @@ gui.Parent = player:WaitForChild("PlayerGui")
 
 -- EXTERNAL GUI PATHS
 local ExternalGUI_Path = player:WaitForChild("PlayerGui"):WaitForChild("MainGUI", 60)
-local ButtonInfo = ExternalGUI_Path and ExternalGUI_Path:WaitForChild("ButtonInfo", 10)
+local ButtonInfo = nil
+
+task.spawn(function()
+    while not ButtonInfo do
+        if ExternalGUI_Path then
+            ButtonInfo = ExternalGUI_Path:FindFirstChild("ButtonInfo")
+        end
+        task.wait(0.5)
+    end
+end)
 
 -- ASSETS
 local ASSETS = {
@@ -882,10 +891,16 @@ RunService.Heartbeat:Connect(function()
     local validTarget = false
 
     -- ONLY allow if ButtonInfo is actually showing a real item
-    if ButtonInfo
-        and ButtonInfo:IsDescendantOf(game)
-        and ButtonInfo:FindFirstChild("Price")
-        and ButtonInfo:FindFirstChild("ItemName") then
+    local priceObj = ButtonInfo:FindFirstChild("Price")
+local itemObj = ButtonInfo:FindFirstChild("ItemName")
+
+local validTarget =
+    ButtonInfo
+    and ButtonInfo:IsDescendantOf(game)
+    and priceObj
+    and itemObj
+    and (priceObj:FindFirstChildWhichIsA("TextLabel") ~= nil
+         or itemObj:FindFirstChildWhichIsA("TextLabel") ~= nil)
         validTarget = true
     end
 
@@ -896,6 +911,10 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+clickTrap.Activated:Connect(function()
+
+    local UIS = game:GetService("UserInputService")
+    if UIS:GetFocusedTextBox() then return end
 clickTrap.Activated:Connect(function()
     if not ButtonInfo or not ButtonInfo.Parent then return end
     if debounce then return end
@@ -912,7 +931,7 @@ local priceObj = ButtonInfo:FindFirstChild("Price")
 if priceObj then
     priceLabel = priceObj:FindFirstChildWhichIsA("TextLabel")
 end
-    local iconLabel  = ButtonInfo:FindFirstChild("Icon") and ButtonInfo.Icon:FindFirstChild("ImageLabel")
+    local iconLabel = ButtonInfo:FindFirstChildWhichIsA("ImageLabel", true)
     
     ItemName = "Gamepass" 
     local nameContainer = ButtonInfo:FindFirstChild("ItemName")
