@@ -1,0 +1,1053 @@
+if not game:GetService("RunService"):IsStudio() then
+    local CoreUI = game.CoreGui
+    local PurchasePrompt = CoreUI:FindFirstChild("PurchasePromptApp")
+    if PurchasePrompt then
+        PurchasePrompt:Destroy()
+    end
+end
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+-- 0. ANTI-DUPLICATE
+if player.PlayerGui:FindFirstChild("FakeRobuxSystem_Auto") then
+    player.PlayerGui.FakeRobuxSystem_Auto:Destroy()
+end
+
+-- 1. SETUP GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "FakeRobuxSystem_Auto"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true 
+gui.DisplayOrder = 10000 
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- EXTERNAL GUI PATHS
+local ExternalGUI_Path = player:WaitForChild("PlayerGui"):WaitForChild("MainGUI", 60)
+local ButtonInfo = ExternalGUI_Path and ExternalGUI_Path:WaitForChild("ButtonInfo", 10)
+
+-- ASSETS
+local ASSETS = {
+    RobuxIcon    = "rbxthumb://type=Asset&id=11713337409&w=150&h=150", 
+    SuccessIcon  = "rbxthumb://type=Asset&id=17829956139&w=150&h=150",
+    DefaultImage = "rbxthumb://type=Asset&id=70388878924496&w=150&h=150",
+    GiftIcon     = "rbxthumb://type=Asset&id=114634407468044&w=150&h=150",
+    UserAvatar   = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
+    Checkmark    = "rbxthumb://type=Asset&id=105931397495778&w=150&h=150" 
+}
+
+-- COLORS
+local Colors = {
+    BgDark      = Color3.fromRGB(30, 30, 35),
+    SetPurple   = Color3.fromRGB(110, 70, 240),
+    White       = Color3.fromRGB(255, 255, 255),
+    GreyText    = Color3.fromRGB(200, 200, 200),
+    InputBg     = Color3.fromRGB(50, 50, 55),
+    ButtonBase  = Color3.fromRGB(0, 70, 180),   
+    FillColor   = Color3.fromRGB(0, 110, 255),
+    GiftPink    = Color3.fromRGB(255, 20, 147),
+    Overlay     = Color3.fromRGB(0, 0, 0),
+    DevRed      = Color3.fromRGB(230, 40, 40),
+    ToggleOff   = Color3.fromRGB(80, 80, 85)
+}
+
+-- STATE VARIABLES
+local CurrentBalance = 0
+local ItemPrice = 0
+local ItemName = "Gamepass"
+local fillTween 
+local debounce = false 
+local ButtonLoaded = false
+local UseDevTags = true 
+
+-- ====================================================
+-- UTILITY FUNCTIONS
+-- ====================================================
+local function formatNumber(n)
+    return tostring(math.floor(n)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+local function makeDraggable(frame)
+    local dragging = false
+    local dragInput
+    local dragStart
+    local startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement 
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+local function createPanel(name, w, h, parent, draggable)
+    local f = Instance.new("Frame") 
+    f.Name = name
+    f.Size = UDim2.new(0, w, 0, h)
+    f.AnchorPoint = Vector2.new(0.5, 0.5)
+    f.Position = UDim2.new(0.5, 0, 0.5, 0)
+    f.BackgroundColor3 = Colors.BgDark
+    f.BorderSizePixel = 0
+    f.BackgroundTransparency = 0 
+    f.ZIndex = 10
+    f.Parent = parent
+
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = f
+    
+    if draggable then
+        makeDraggable(f)
+    end
+    
+    return f
+end
+
+local function fadeGroup(container, targetTransparency, timeInfo)
+    TweenService:Create(container, timeInfo, {BackgroundTransparency = targetTransparency}):Play()
+    for _, v in pairs(container:GetDescendants()) do
+        if v:IsA("TextLabel") or v:IsA("TextBox") then
+            TweenService:Create(v, timeInfo, {TextTransparency = targetTransparency}):Play()
+        elseif v:IsA("ImageLabel") then
+            TweenService:Create(v, timeInfo, {ImageTransparency = targetTransparency}):Play()
+        elseif v:IsA("TextButton") then
+            TweenService:Create(v, timeInfo, {TextTransparency = targetTransparency}):Play()
+            if v.Name == "CloseButton" then
+                TweenService:Create(v, timeInfo, {BackgroundTransparency = 1}):Play()
+            else
+                TweenService:Create(v, timeInfo, {BackgroundTransparency = targetTransparency}):Play()
+            end
+        elseif v:IsA("Frame") and v.Name == "FillBar" then
+            TweenService:Create(v, timeInfo, {BackgroundTransparency = targetTransparency}):Play()
+        end
+    end
+end
+
+local function resetFrameVisuals(frame)
+    frame.BackgroundTransparency = 0
+    for _, v in pairs(frame:GetDescendants()) do
+        if v:IsA("TextLabel") or v:IsA("TextBox") then
+            v.TextTransparency = 0
+        elseif v:IsA("ImageLabel") then
+            v.ImageTransparency = 0
+        elseif v:IsA("TextButton") then
+            v.TextTransparency = 0
+            if v.Name == "CloseButton" then
+                v.BackgroundTransparency = 1 
+            else
+                v.BackgroundTransparency = 0
+            end
+        elseif v:IsA("Frame") and v.Name == "FillBar" then
+            v.BackgroundTransparency = 0
+        end
+    end
+end
+
+-- ====================================================
+-- 0. BACKGROUND SHADOW (OVERLAY) - No Camera Blocking
+-- ====================================================
+local modalOverlay = Instance.new("Frame")
+modalOverlay.Name = "ModalOverlay"
+modalOverlay.Size = UDim2.new(1, 0, 1, 0)
+modalOverlay.BackgroundColor3 = Colors.Overlay
+modalOverlay.BackgroundTransparency = 1 
+modalOverlay.Visible = false
+modalOverlay.ZIndex = 8 
+modalOverlay.Parent = gui
+
+-- ====================================================
+-- 1. CLICK TRAP
+-- ====================================================
+local clickTrap = Instance.new("TextButton")
+clickTrap.Name = "ClickTrap"
+clickTrap.Size = UDim2.new(1, 0, 1, 0)
+clickTrap.BackgroundTransparency = 1
+clickTrap.Text = ""
+clickTrap.Visible = false 
+clickTrap.ZIndex = 5 
+clickTrap.Parent = gui
+
+-- ====================================================
+-- 2. SETUP WINDOW (Redesigned "Card" Style + Identity)
+-- ====================================================
+local setFrame = Instance.new("Frame")
+setFrame.Name = "SetRobux"
+setFrame.Size = UDim2.new(0, 260, 0, 320)
+setFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+setFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+setFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25) 
+setFrame.BorderSizePixel = 0
+setFrame.ZIndex = 10
+setFrame.Parent = gui
+
+Instance.new("UICorner", setFrame).CornerRadius = UDim.new(0, 12)
+makeDraggable(setFrame)
+
+Instance.new("UICorner", setFrame).CornerRadius = UDim.new(0, 12)
+makeDraggable(setFrame)
+
+-- CLOSE BUTTON (SET FRAME)
+local closeSet = Instance.new("TextButton")
+closeSet.Name = "CloseButton"
+closeSet.Text = "X"
+closeSet.Font = Enum.Font.GothamBold
+closeSet.TextSize = 16
+closeSet.TextColor3 = Colors.White
+closeSet.BackgroundTransparency = 1
+closeSet.Size = UDim2.new(0, 25, 0, 25)
+closeSet.Position = UDim2.new(1, -30, 0, 10)
+closeSet.ZIndex = 12
+closeSet.Parent = setFrame
+
+closeSet.MouseButton1Click:Connect(function()
+    setFrame.Visible = false
+end)
+
+-- Header Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = "The Biryukov : Pls Donate"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 15
+titleLabel.TextColor3 = Colors.White
+titleLabel.BackgroundTransparency = 1
+titleLabel.Size = UDim2.new(1, -30, 0, 45)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.ZIndex = 11
+titleLabel.Parent = setFrame
+
+local sep = Instance.new("Frame")
+sep.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+sep.BorderSizePixel = 0
+sep.Size = UDim2.new(1, 0, 0, 1)
+sep.Position = UDim2.new(0, 0, 0, 45)
+sep.ZIndex = 11
+sep.Parent = setFrame
+
+-- ROBUX SECTION
+local inputContainer = Instance.new("Frame")
+inputContainer.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+inputContainer.Size = UDim2.new(0.9, 0, 0, 40)
+inputContainer.Position = UDim2.new(0.5, 0, 0, 60)
+inputContainer.AnchorPoint = Vector2.new(0.5, 0)
+inputContainer.ZIndex = 11
+inputContainer.Parent = setFrame
+Instance.new("UICorner", inputContainer).CornerRadius = UDim.new(0, 8)
+
+local inputIcon = Instance.new("ImageLabel")
+inputIcon.Image = ASSETS.RobuxIcon
+inputIcon.BackgroundTransparency = 1
+inputIcon.Size = UDim2.new(0, 24, 0, 24)
+inputIcon.Position = UDim2.new(0, 12, 0.5, 0)
+inputIcon.AnchorPoint = Vector2.new(0, 0.5)
+inputIcon.ZIndex = 12
+inputIcon.Parent = inputContainer
+
+local inputRobux = Instance.new("TextBox")
+inputRobux.PlaceholderText = "Enter Amount"
+inputRobux.Text = ""
+inputRobux.Font = Enum.Font.GothamSemibold
+inputRobux.TextSize = 15
+inputRobux.TextColor3 = Colors.White
+inputRobux.PlaceholderColor3 = Color3.fromRGB(130, 130, 135)
+inputRobux.BackgroundColor3 = Colors.InputBg 
+inputRobux.BackgroundTransparency = 1
+inputRobux.Size = UDim2.new(1, -50, 1, 0)
+inputRobux.Position = UDim2.new(0, 45, 0, 0)
+inputRobux.TextXAlignment = Enum.TextXAlignment.Left
+inputRobux.ZIndex = 12
+inputRobux.Parent = inputContainer
+
+local setBtn = Instance.new("TextButton")
+setBtn.Text = "Set Balance"
+setBtn.Font = Enum.Font.GothamBold
+setBtn.TextSize = 13 
+setBtn.TextColor3 = Colors.White
+setBtn.BackgroundColor3 = Colors.ButtonBase 
+setBtn.Size = UDim2.new(0.9, 0, 0, 35)
+setBtn.Position = UDim2.new(0.5, 0, 0, 110)
+setBtn.AnchorPoint = Vector2.new(0.5, 0)
+setBtn.ZIndex = 11
+setBtn.Parent = setFrame
+Instance.new("UICorner", setBtn).CornerRadius = UDim.new(0, 8)
+
+-- IDENTITY SECTION
+local sep2 = Instance.new("Frame")
+sep2.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+sep2.BorderSizePixel = 0
+sep2.Size = UDim2.new(1, 0, 0, 1)
+sep2.Position = UDim2.new(0, 0, 0, 155)
+sep2.ZIndex = 11
+sep2.Parent = setFrame
+
+local nameContainer = Instance.new("Frame")
+nameContainer.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+nameContainer.Size = UDim2.new(0.9, 0, 0, 40)
+nameContainer.Position = UDim2.new(0.5, 0, 0, 170)
+nameContainer.AnchorPoint = Vector2.new(0.5, 0)
+nameContainer.ZIndex = 11
+nameContainer.Parent = setFrame
+Instance.new("UICorner", nameContainer).CornerRadius = UDim.new(0, 8)
+
+local nameIcon = Instance.new("ImageLabel")
+nameIcon.Image = ASSETS.UserAvatar
+nameIcon.BackgroundTransparency = 1
+nameIcon.Size = UDim2.new(0, 24, 0, 24)
+nameIcon.Position = UDim2.new(0, 12, 0.5, 0)
+nameIcon.AnchorPoint = Vector2.new(0, 0.5)
+nameIcon.ZIndex = 12
+nameIcon.Parent = nameContainer
+Instance.new("UICorner", nameIcon).CornerRadius = UDim.new(1, 0)
+
+local inputName = Instance.new("TextBox")
+inputName.PlaceholderText = "New Display Name"
+inputName.Text = ""
+inputName.Font = Enum.Font.GothamSemibold
+inputName.TextSize = 15
+inputName.TextColor3 = Colors.White
+inputName.PlaceholderColor3 = Color3.fromRGB(130, 130, 135)
+inputName.BackgroundColor3 = Colors.InputBg 
+inputName.BackgroundTransparency = 1
+inputName.Size = UDim2.new(1, -50, 1, 0)
+inputName.Position = UDim2.new(0, 45, 0, 0)
+inputName.TextXAlignment = Enum.TextXAlignment.Left
+inputName.ZIndex = 12
+inputName.Parent = nameContainer
+
+local toggleDevBtn = Instance.new("TextButton")
+toggleDevBtn.Text = "Dev Tags & Check: ON"
+toggleDevBtn.Font = Enum.Font.GothamBold
+toggleDevBtn.TextSize = 12 
+toggleDevBtn.TextColor3 = Colors.White
+toggleDevBtn.BackgroundColor3 = Colors.ButtonBase 
+toggleDevBtn.Size = UDim2.new(0.9, 0, 0, 30)
+toggleDevBtn.Position = UDim2.new(0.5, 0, 0, 220)
+toggleDevBtn.AnchorPoint = Vector2.new(0.5, 0)
+toggleDevBtn.ZIndex = 11
+toggleDevBtn.Parent = setFrame
+Instance.new("UICorner", toggleDevBtn).CornerRadius = UDim.new(0, 6)
+
+local setIdentityBtn = Instance.new("TextButton")
+setIdentityBtn.Text = "Apply Name"
+setIdentityBtn.Font = Enum.Font.GothamBold
+setIdentityBtn.TextSize = 13 
+setIdentityBtn.TextColor3 = Colors.White
+setIdentityBtn.BackgroundColor3 = Colors.DevRed 
+setIdentityBtn.Size = UDim2.new(0.9, 0, 0, 35)
+setIdentityBtn.Position = UDim2.new(0.5, 0, 0, 260)
+setIdentityBtn.AnchorPoint = Vector2.new(0.5, 0)
+setIdentityBtn.ZIndex = 11
+setIdentityBtn.Parent = setFrame
+Instance.new("UICorner", setIdentityBtn).CornerRadius = UDim.new(0, 8)
+
+-- ====================================================
+-- 3. BUY ITEM WINDOW
+-- ====================================================
+local buyFrame = createPanel("BuyFrame", 450, 225, gui, false)
+buyFrame.Visible = false
+
+local bTitle = Instance.new("TextLabel")
+bTitle.Text = "Buy item"
+bTitle.Font = Enum.Font.BuilderSansExtraBold 
+bTitle.TextSize = 22
+bTitle.TextColor3 = Colors.White
+bTitle.BackgroundTransparency = 1
+bTitle.Size = UDim2.new(0, 150, 0, 30)
+bTitle.Position = UDim2.new(0, 20, 0, 10)
+bTitle.TextXAlignment = Enum.TextXAlignment.Left
+bTitle.ZIndex = 11
+bTitle.Parent = buyFrame
+
+local headerContainer = Instance.new("Frame")
+headerContainer.BackgroundTransparency = 1
+headerContainer.Size = UDim2.new(0, 250, 0, 30)
+headerContainer.AnchorPoint = Vector2.new(1, 0)
+headerContainer.Position = UDim2.new(1, -15, 0, 10)
+headerContainer.ZIndex = 11
+headerContainer.Parent = buyFrame
+
+local headerLayout = Instance.new("UIListLayout")
+headerLayout.Parent = headerContainer
+headerLayout.FillDirection = Enum.FillDirection.Horizontal
+headerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+headerLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+headerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+headerLayout.Padding = UDim.new(0, 8)
+
+local closeX = Instance.new("TextButton")
+closeX.Name = "CloseButton" 
+closeX.Text = "X"
+closeX.Font = Enum.Font.BuilderSansMedium 
+closeX.TextSize = 24
+closeX.TextColor3 = Colors.White
+closeX.BackgroundTransparency = 1 
+closeX.AutoButtonColor = false     
+closeX.Size = UDim2.new(0, 25, 0, 25)
+closeX.LayoutOrder = 3
+closeX.ZIndex = 11
+closeX.Parent = headerContainer
+
+local rText = Instance.new("TextLabel")
+rText.Text = "0" 
+rText.Font = Enum.Font.BuilderSansMedium
+rText.TextSize = 15
+rText.TextColor3 = Colors.White
+rText.BackgroundTransparency = 1
+rText.AutomaticSize = Enum.AutomaticSize.X
+rText.Size = UDim2.new(0, 0, 1, 0)
+rText.LayoutOrder = 2
+rText.ZIndex = 11
+rText.Parent = headerContainer
+
+local rIcon = Instance.new("ImageLabel")
+rIcon.Image = ASSETS.RobuxIcon
+rIcon.BackgroundTransparency = 1
+rIcon.Size = UDim2.new(0, 16, 0, 16) 
+rIcon.LayoutOrder = 1
+rIcon.ZIndex = 11
+rIcon.Parent = headerContainer
+
+local itemImg = Instance.new("ImageLabel")
+itemImg.Image = ASSETS.DefaultImage
+itemImg.BackgroundTransparency = 1
+itemImg.Size = UDim2.new(0, 75, 0, 75) 
+itemImg.Position = UDim2.new(0, 35, 0, 55) 
+itemImg.ZIndex = 11
+itemImg.Parent = buyFrame
+Instance.new("UICorner", itemImg).CornerRadius = UDim.new(0, 8)
+
+local infoContainer = Instance.new("Frame")
+infoContainer.Name = "InfoContainer"
+infoContainer.BackgroundTransparency = 1
+infoContainer.Position = UDim2.new(0, 125, 0, 55) 
+infoContainer.Size = UDim2.new(1, -145, 0, 0)     
+infoContainer.AutomaticSize = Enum.AutomaticSize.Y 
+infoContainer.ZIndex = 11
+infoContainer.Parent = buyFrame
+
+local infoLayout = Instance.new("UIListLayout")
+infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
+infoLayout.Padding = UDim.new(0, 2) 
+infoLayout.Parent = infoContainer
+
+local iName = Instance.new("TextLabel")
+iName.Text = "Gamepass" 
+iName.Font = Enum.Font.BuilderSansBold 
+iName.TextSize = 20 
+iName.TextColor3 = Colors.White
+iName.BackgroundTransparency = 1
+iName.Size = UDim2.new(1, 0, 0, 22) 
+iName.AutomaticSize = Enum.AutomaticSize.Y
+iName.TextWrapped = true
+iName.TextXAlignment = Enum.TextXAlignment.Left
+iName.TextYAlignment = Enum.TextYAlignment.Center
+iName.LayoutOrder = 1
+iName.ZIndex = 11
+iName.Parent = infoContainer
+
+local priceRow = Instance.new("Frame")
+priceRow.BackgroundTransparency = 1
+priceRow.Size = UDim2.new(1, 0, 0, 20) 
+priceRow.LayoutOrder = 2
+priceRow.ZIndex = 11
+priceRow.Parent = infoContainer
+
+local pIcon = Instance.new("ImageLabel")
+pIcon.Image = ASSETS.RobuxIcon
+pIcon.BackgroundTransparency = 1
+pIcon.ImageColor3 = Colors.White
+pIcon.Size = UDim2.new(0, 16, 0, 16) 
+pIcon.Position = UDim2.new(0, 0, 0.5, 0)
+pIcon.AnchorPoint = Vector2.new(0, 0.5) 
+pIcon.ZIndex = 11
+pIcon.Parent = priceRow
+
+local pText = Instance.new("TextLabel")
+pText.Text = "0"
+pText.Font = Enum.Font.BuilderSansMedium
+pText.TextSize = 16 
+pText.TextColor3 = Colors.White
+pText.BackgroundTransparency = 1
+pText.Size = UDim2.new(1, -20, 1, 0)
+pText.Position = UDim2.new(0, 20, 0, 0)
+pText.TextXAlignment = Enum.TextXAlignment.Left
+pText.ZIndex = 11
+pText.Parent = priceRow
+
+local buyBtn = Instance.new("TextButton")
+buyBtn.Text = "" 
+buyBtn.BackgroundColor3 = Colors.ButtonBase 
+buyBtn.Size = UDim2.new(0.9, 0, 0, 42.5) 
+buyBtn.Position = UDim2.new(0.05, 0, 0.73, 0)
+buyBtn.ClipsDescendants = true
+buyBtn.ZIndex = 11
+buyBtn.AutoButtonColor = false 
+buyBtn.Parent = buyFrame
+Instance.new("UICorner", buyBtn).CornerRadius = UDim.new(0, 8)
+
+local fillBar = Instance.new("Frame")
+fillBar.Name = "FillBar"
+fillBar.BackgroundColor3 = Colors.FillColor 
+fillBar.BorderSizePixel = 0
+fillBar.Size = UDim2.new(0, 0, 1, 0)
+fillBar.ZIndex = 12
+fillBar.Parent = buyBtn 
+Instance.new("UICorner", fillBar).CornerRadius = UDim.new(0, 8) 
+
+local btnLabel = Instance.new("TextLabel")
+btnLabel.Text = "Buy"
+btnLabel.Font = Enum.Font.BuilderSansBold 
+btnLabel.TextSize = 20
+btnLabel.TextColor3 = Colors.White
+btnLabel.BackgroundTransparency = 1
+btnLabel.Size = UDim2.new(1, 0, 1, 0)
+btnLabel.ZIndex = 13
+btnLabel.Parent = buyBtn
+
+-- ====================================================
+-- 4. SUCCESS POPUP
+-- ====================================================
+local successFrame = createPanel("SuccessFrame", 450, 225, gui, false)
+successFrame.Visible = false
+
+local sTitle = bTitle:Clone()
+sTitle.Text = "Purchased completed"
+sTitle.Parent = successFrame
+
+local successCloseContainer = Instance.new("Frame", successFrame)
+successCloseContainer.Size = UDim2.new(1, -15, 0, 30)
+successCloseContainer.Position = UDim2.new(0, 0, 0, 12)
+successCloseContainer.BackgroundTransparency = 1
+successCloseContainer.ZIndex = 11
+local sX = closeX:Clone()
+sX.Name = "CloseButton" 
+sX.Position = UDim2.new(1, 0, 0, 0)
+sX.AnchorPoint = Vector2.new(1, 0)
+sX.Parent = successCloseContainer
+
+local bigCheck = Instance.new("ImageLabel")
+bigCheck.Image = ASSETS.SuccessIcon
+bigCheck.BackgroundTransparency = 1
+bigCheck.Size = UDim2.new(0, 35, 0, 35) 
+bigCheck.Position = UDim2.new(0.5, -17, 0.35, 0)
+bigCheck.ZIndex = 11
+bigCheck.Parent = successFrame
+
+local sMsg = Instance.new("TextLabel")
+sMsg.Text = "You have successfully bought..."
+sMsg.Font = Enum.Font.BuilderSansMedium 
+sMsg.TextSize = 14
+sMsg.TextColor3 = Colors.White
+sMsg.BackgroundTransparency = 1
+sMsg.TextWrapped = true                
+sMsg.Size = UDim2.new(0.9, 0, 0, 40)   
+sMsg.AnchorPoint = Vector2.new(0.5, 0) 
+sMsg.Position = UDim2.new(0.5, 0, 0.53, 0) 
+sMsg.TextXAlignment = Enum.TextXAlignment.Center
+sMsg.TextYAlignment = Enum.TextYAlignment.Top 
+sMsg.ZIndex = 11
+sMsg.Parent = successFrame
+
+local okBtn = Instance.new("TextButton")
+okBtn.Text = "Okay"
+okBtn.Font = Enum.Font.BuilderSansBold 
+okBtn.TextSize = 20 
+okBtn.TextColor3 = Colors.White
+okBtn.BackgroundColor3 = Colors.FillColor
+okBtn.Size = UDim2.new(0.9, 0, 0, 40)
+okBtn.Position = UDim2.new(0.05, 0, 0.73, 0) 
+okBtn.ZIndex = 11
+okBtn.Parent = successFrame
+Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0, 8)
+
+-- ====================================================
+-- 5. "SENT GIFT!" BUTTON GUI
+-- ====================================================
+local giftBtn = Instance.new("Frame")
+giftBtn.Name = "SentGiftButton"
+giftBtn.BackgroundColor3 = Colors.GiftPink
+giftBtn.BackgroundTransparency = 1 
+giftBtn.Visible = false 
+giftBtn.Size = UDim2.new(0, 50, 0, 50) 
+giftBtn.Position = UDim2.new(0.5, 0, 0.82, 0) 
+giftBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+giftBtn.ClipsDescendants = true
+giftBtn.ZIndex = 30
+giftBtn.Parent = gui
+
+local gCorner = Instance.new("UICorner")
+gCorner.CornerRadius = UDim.new(1, 0) 
+gCorner.Parent = giftBtn
+
+local gIcon = Instance.new("ImageLabel")
+gIcon.Name = "Icon"
+gIcon.Image = ASSETS.GiftIcon
+gIcon.BackgroundTransparency = 1
+gIcon.ImageTransparency = 1 
+gIcon.Size = UDim2.new(0, 25, 0, 25)
+gIcon.Position = UDim2.new(0, 22.5, 0.5, 0) 
+gIcon.AnchorPoint = Vector2.new(0, 0.5)
+gIcon.ImageColor3 = Colors.White
+gIcon.ZIndex = 31
+gIcon.Parent = giftBtn
+
+local gText = Instance.new("TextLabel")
+gText.Name = "Text"
+gText.Text = "sent gift!"
+gText.Font = Enum.Font.BuilderSansBold 
+gText.TextSize = 18
+gText.TextColor3 = Colors.White
+gText.BackgroundTransparency = 1
+gText.TextTransparency = 1 
+gText.AutomaticSize = Enum.AutomaticSize.XY
+gText.Position = UDim2.new(0, 150, 0.5, 0) 
+gText.AnchorPoint = Vector2.new(0.5, 0.5)
+gText.ZIndex = 31
+gText.Parent = giftBtn
+
+-- ✅ ADD OPEN BUTTON HERE
+local openBtn = Instance.new("TextButton")
+openBtn.Name = "OpenUI"
+openBtn.Text = "+"
+openBtn.Font = Enum.Font.GothamBold
+openBtn.TextSize = 20
+openBtn.TextColor3 = Color3.fromRGB(255,255,255)
+openBtn.BackgroundColor3 = Color3.fromRGB(50,50,55)
+openBtn.Size = UDim2.new(0, 40, 0, 40)
+openBtn.Position = UDim2.new(0, 20, 1, -60)
+openBtn.ZIndex = 20
+openBtn.Parent = gui
+
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(1, 0)
+
+openBtn.MouseButton1Click:Connect(function()
+    setFrame.Visible = not setFrame.Visible
+end)
+
+-- ====================================================
+-- 6. LOGIC & ANIMATIONS
+-- ====================================================
+
+-- ====================================================
+-- 6. LOGIC & ANIMATIONS
+-- ====================================================
+
+local function toggleOverlay(show)
+    modalOverlay.Visible = true
+    local targetAlpha = show and 0.6 or 1
+    local tInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    local tween = TweenService:Create(modalOverlay, tInfo, {BackgroundTransparency = targetAlpha})
+    tween:Play()
+    
+    if not show then
+        tween.Completed:Connect(function()
+            if modalOverlay.BackgroundTransparency == 1 then
+                modalOverlay.Visible = false
+            end
+        end)
+    end
+end
+
+local function startFill()
+    fillBar.Size = UDim2.new(0, 0, 1, 0) 
+    fillBar.Visible = true
+    fillBar.BackgroundTransparency = 0 
+    
+    local tweenInfo = TweenInfo.new(1.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In) 
+    fillTween = TweenService:Create(fillBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
+    fillTween:Play()
+
+    return fillTween
+end
+
+local function playGiftAnimation()
+    giftBtn.Size = UDim2.new(0, 0, 0, 50) 
+    giftBtn.BackgroundTransparency = 0
+    gText.Position = UDim2.new(0, 120, 0.5, 0)
+    
+    giftBtn.Visible = true
+    gIcon.ImageTransparency = 0
+    gText.TextTransparency = 1 
+
+    TweenService:Create(giftBtn, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 200, 0, 50) 
+    }):Play()
+    
+    TweenService:Create(gText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, 15, 0.5, 0),
+        TextTransparency = 0
+    }):Play()
+
+    local sound = Instance.new("Sound", workspace)
+    sound.Name = "GiftEffectSound"
+    sound.SoundId = "rbxassetid://14674229054"
+    sound.Volume = 2 
+    sound.PlayOnRemove = true
+    sound:Destroy()
+
+    task.wait(3)
+
+    local closeInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    TweenService:Create(giftBtn, closeInfo, {
+        Size = UDim2.new(0, 0, 0, 50),
+        BackgroundTransparency = 1
+    }):Play()
+    
+    TweenService:Create(gIcon, closeInfo, {ImageTransparency = 1}):Play()
+    TweenService:Create(gText, closeInfo, {TextTransparency = 1}):Play()
+    
+    task.delay(0.4, function()
+        if giftBtn.BackgroundTransparency == 1 then
+            giftBtn.Visible = false
+        end
+    end)
+end
+
+-- ====================================================
+-- CLICK HANDLERS & MONITORING
+-- ====================================================
+
+-- Toggle Handler
+toggleDevBtn.MouseButton1Click:Connect(function()
+    UseDevTags = not UseDevTags
+    if UseDevTags then
+        toggleDevBtn.Text = "Dev Tags & Check: ON"
+        toggleDevBtn.BackgroundColor3 = Colors.ButtonBase
+    else
+        toggleDevBtn.Text = "Dev Tags & Check: OFF"
+        toggleDevBtn.BackgroundColor3 = Colors.ToggleOff
+    end
+end)
+
+-- Identity Setup Handler
+setIdentityBtn.MouseButton1Click:Connect(function()
+    local newName = inputName.Text
+    if newName == "" then newName = player.DisplayName end 
+    
+    local char = player.Character
+    if not char then return end
+    
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    
+    local headTag = head:FindFirstChild("HeadTag")
+    if not headTag then return end
+    
+    local realRole = headTag:FindFirstChild("Role")
+    if realRole then realRole.Visible = false end
+    
+    local realDisplay = headTag:FindFirstChild("Display")
+    local originalFont = Enum.Font.FredokaOne 
+    
+    if realDisplay and realDisplay:IsA("TextLabel") then 
+        originalFont = realDisplay.Font 
+        realDisplay.Visible = false 
+    end
+
+    local fakeRole = headTag:FindFirstChild("FakeDevRole")
+    if UseDevTags then
+        if not fakeRole then
+            fakeRole = Instance.new("Frame")
+            fakeRole.Name = "FakeDevRole"
+            fakeRole.BackgroundColor3 = Colors.DevRed
+            fakeRole.Size = UDim2.new(0, 75, 0, 20) 
+            fakeRole.LayoutOrder = -1 
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = fakeRole
+            
+            local devText = Instance.new("TextLabel")
+            devText.BackgroundTransparency = 1
+            devText.Size = UDim2.new(1, 0, 1, 0)
+            devText.Font = Enum.Font.GothamBold 
+            devText.Text = "Developer"
+            devText.TextColor3 = Colors.White
+            devText.TextSize = 13
+            devText.Parent = fakeRole
+            
+            fakeRole.Parent = headTag
+        else
+            fakeRole.Visible = true
+        end
+    else
+        if fakeRole then fakeRole.Visible = false end
+    end
+
+    local fakeDisplay = headTag:FindFirstChild("FakeDisplayName")
+    if not fakeDisplay then
+        fakeDisplay = Instance.new("Frame")
+        fakeDisplay.Name = "FakeDisplayName"
+        fakeDisplay.BackgroundTransparency = 1
+        fakeDisplay.Size = UDim2.new(1, 0, 0, 20)
+        fakeDisplay.LayoutOrder = 1 
+        
+        local hLayout = Instance.new("UIListLayout")
+        hLayout.FillDirection = Enum.FillDirection.Horizontal
+        hLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        hLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        hLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        hLayout.Padding = UDim.new(0, 5) 
+        hLayout.Parent = fakeDisplay
+
+        local check = Instance.new("ImageLabel")
+        check.Name = "Checkmark"
+        check.Image = ASSETS.Checkmark
+        check.BackgroundTransparency = 1
+        check.Size = UDim2.new(0, 18, 0, 18)
+        check.LayoutOrder = 1
+        check.Parent = fakeDisplay
+
+        local nameText = Instance.new("TextLabel")
+        nameText.Name = "NameText"
+        nameText.BackgroundTransparency = 1
+        nameText.Size = UDim2.new(0, 0, 1, 0)
+        nameText.AutomaticSize = Enum.AutomaticSize.X 
+        nameText.Text = newName
+        nameText.TextColor3 = Colors.White
+        nameText.TextSize = 18 
+        nameText.LayoutOrder = 2
+        
+        nameText.Parent = fakeDisplay
+        fakeDisplay.Parent = headTag
+    end
+
+    fakeDisplay.NameText.Text = newName
+    fakeDisplay.NameText.Font = originalFont
+    
+    local checkMarkImg = fakeDisplay:FindFirstChild("Checkmark")
+    if checkMarkImg then
+        checkMarkImg.Visible = UseDevTags
+    end
+end)
+
+setBtn.MouseButton1Click:Connect(function()
+    local bVal = tonumber(inputRobux.Text)
+    if bVal then 
+        CurrentBalance = bVal 
+    end
+    rText.Text = formatNumber(CurrentBalance)
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not ButtonInfo then 
+        if ExternalGUI_Path then
+            ButtonInfo = ExternalGUI_Path:FindFirstChild("ButtonInfo")
+        end
+        return 
+    end
+
+    if ButtonInfo.Visible and not buyFrame.Visible and not successFrame.Visible then
+        clickTrap.Visible = true
+    else
+        clickTrap.Visible = false
+    end
+end)
+
+clickTrap.MouseButton1Click:Connect(function()
+    if debounce then return end
+    if not ButtonInfo then return end
+
+    if buyFrame.Visible or successFrame.Visible then
+        clickTrap.Visible = false
+        return 
+    end
+
+    local priceLabel = ButtonInfo:FindFirstChild("Price") and ButtonInfo.Price:FindFirstChild("TextLabel")
+    local iconLabel  = ButtonInfo:FindFirstChild("Icon") and ButtonInfo.Icon:FindFirstChild("ImageLabel")
+    
+    ItemName = "Gamepass" 
+    local nameContainer = ButtonInfo:FindFirstChild("ItemName")
+    
+    if nameContainer then
+        if nameContainer:IsA("TextLabel") then
+            ItemName = nameContainer.Text
+        else
+            local label = nameContainer:FindFirstChild("TextLabel")
+            if label then
+                ItemName = label.Text
+            else
+                local anyLabel = nameContainer:FindFirstChildWhichIsA("TextLabel")
+                if anyLabel then
+                    ItemName = anyLabel.Text
+                end
+            end
+        end
+    end
+
+    local rawPrice = priceLabel and priceLabel.Text or "0"
+    local cleanPrice = string.gsub(rawPrice, "%D", "")
+    ItemPrice = tonumber(cleanPrice) or 0
+    pText.Text = formatNumber(ItemPrice)
+
+    if iconLabel then
+        itemImg.Image = iconLabel.Image
+    else
+        itemImg.Image = ASSETS.DefaultImage
+    end
+
+    iName.Text = ItemName
+    sMsg.Text = "You have successfully bought " .. ItemName
+
+    clickTrap.Visible = false
+    buyFrame.Visible = true
+    resetFrameVisuals(buyFrame)
+    
+    -- Much softer Pop-in animation setup
+    buyFrame.Size = UDim2.new(0, 430, 0, 215) 
+    buyFrame.Position = UDim2.new(0.5, 0, 0.5, 0.02) 
+    
+    toggleOverlay(true) 
+
+    local s = Instance.new("Sound", workspace)
+    s.SoundId = "rbxassetid://4612375232"
+    s:Play()
+    
+    -- Smooth spring pop-in
+    TweenService:Create(buyFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 450, 0, 225),
+        Position = UDim2.new(0.5, 0, 0.5, 0)
+    }):Play()
+    
+    local tween = startFill()
+    tween.Completed:Connect(function()
+        ButtonLoaded = true
+    end)
+end)
+
+buyBtn.MouseButton1Click:Connect(function()
+    if not ButtonLoaded then return end
+    if not buyFrame.Visible or debounce then return end
+    debounce = true 
+
+    if fillTween then fillTween:Cancel() end
+    fillBar.Visible = false 
+
+    task.wait(1.5)
+
+    local startPos = buyFrame.Position
+    local downPos = UDim2.new(startPos.X.Scale, startPos.X.Offset, startPos.Y.Scale + 0.02, startPos.Y.Offset) 
+
+    -- INCREASED SYNC: Slower fade out for Buy Window (0.4s)
+    local fadeOutInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    TweenService:Create(buyFrame, fadeOutInfo, {
+        Position = downPos,
+        Size = UDim2.new(0, 440, 0, 220) 
+    }):Play()
+    fadeGroup(buyFrame, 1, fadeOutInfo)
+
+    -- Wait until Buy is nearly invisible (0.35s) before starting Success
+    task.wait(0.35) 
+    buyFrame.Visible = false
+
+    -- Setup Success Frame
+    successFrame.Visible = true
+    successFrame.Position = downPos
+    successFrame.Size = UDim2.new(0, 440, 0, 220)
+    fadeGroup(successFrame, 1, TweenInfo.new(0)) -- Instant hidden state
+    
+    CurrentBalance = CurrentBalance - ItemPrice
+    rText.Text = formatNumber(CurrentBalance)
+    
+    -- Smooth synced pop-in for Success Window
+    local fadeInInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    TweenService:Create(successFrame, fadeInInfo, {
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(0, 450, 0, 225)
+    }):Play()
+    fadeGroup(successFrame, 0, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+
+    debounce = false 
+end)
+
+local function closeAll()
+    if fillTween then fillTween:Cancel() end
+    debounce = true
+    
+    local activeFrame = buyFrame.Visible and buyFrame or (successFrame.Visible and successFrame or nil)
+    
+    if activeFrame then
+        local downPos = UDim2.new(activeFrame.Position.X.Scale, activeFrame.Position.X.Offset, activeFrame.Position.Y.Scale + 0.02, activeFrame.Position.Y.Offset) 
+        local fadeOutInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        
+        TweenService:Create(activeFrame, fadeOutInfo, {
+            Position = downPos,
+            Size = UDim2.new(0, 440, 0, 220) 
+        }):Play()
+        fadeGroup(activeFrame, 1, fadeOutInfo)
+        
+        task.wait(0.25)
+        activeFrame.Visible = false
+    end
+    
+    toggleOverlay(false)
+    debounce = false
+end
+
+okBtn.MouseButton1Click:Connect(function()
+    if not successFrame.Visible or debounce then return end
+    debounce = true 
+    
+    local s = Instance.new("Sound", workspace)
+    s.SoundId = "rbxassetid://4612375232"
+    s:Play()
+    
+    local startPos = successFrame.Position
+    local downPos = UDim2.new(startPos.X.Scale, startPos.X.Offset, startPos.Y.Scale + 0.02, startPos.Y.Offset) 
+    
+    local fadeOutInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    TweenService:Create(successFrame, fadeOutInfo, {
+        Position = downPos,
+        Size = UDim2.new(0, 440, 0, 220) 
+    }):Play()
+    fadeGroup(successFrame, 1, fadeOutInfo)
+    
+    toggleOverlay(false) 
+    
+    task.wait(0.25)
+    ButtonLoaded = false
+    successFrame.Visible = false
+    debounce = false
+    
+    task.wait(0.2)
+    playGiftAnimation()
+end)
+
+closeX.MouseButton1Click:Connect(closeAll)
+sX.MouseButton1Click:Connect(closeAll)
