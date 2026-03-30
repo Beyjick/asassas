@@ -897,8 +897,7 @@ local itemObj = ButtonInfo:FindFirstChild("ItemName")
 local validTarget =
     ButtonInfo
     and ButtonInfo:IsDescendantOf(game)
-    and priceObj
-    and itemObj
+    and (priceObj ~= nil or itemObj ~= nil)
     and (priceObj:FindFirstChildWhichIsA("TextLabel") ~= nil
          or itemObj:FindFirstChildWhichIsA("TextLabel") ~= nil)
         validTarget = true
@@ -912,54 +911,40 @@ local validTarget =
 end)
 
 clickTrap.Activated:Connect(function()
-
     local UIS = game:GetService("UserInputService")
     if UIS:GetFocusedTextBox() then return end
-clickTrap.Activated:Connect(function()
+
     if not ButtonInfo or not ButtonInfo.Parent then return end
     if debounce then return end
-    if not ButtonInfo then return end
 
     if buyFrame.Visible or successFrame.Visible then
         clickTrap.Visible = false
-        return 
+        return
     end
 
-    local priceLabel = nil
-local priceObj = ButtonInfo:FindFirstChild("Price")
+    local priceObj = ButtonInfo:FindFirstChild("Price")
+    local priceLabel = priceObj and priceObj:FindFirstChildWhichIsA("TextLabel")
 
-if priceObj then
-    priceLabel = priceObj:FindFirstChildWhichIsA("TextLabel")
-end
     local iconLabel = ButtonInfo:FindFirstChildWhichIsA("ImageLabel", true)
-    
-    ItemName = "Gamepass" 
+
+    -- ITEM NAME
+    ItemName = "Gamepass"
     local nameContainer = ButtonInfo:FindFirstChild("ItemName")
-    
+
     if nameContainer then
-        if nameContainer:IsA("TextLabel") then
-            ItemName = nameContainer.Text
-        else
-            local label = nameContainer:FindFirstChild("TextLabel")
-            if label then
-                ItemName = label.Text
-            else
-                local anyLabel = nameContainer:FindFirstChildWhichIsA("TextLabel")
-                if anyLabel then
-                    ItemName = anyLabel.Text
-                end
-            end
+        local label = nameContainer:FindFirstChildWhichIsA("TextLabel")
+        if label then
+            ItemName = label.Text
         end
     end
 
-    local rawPrice = "0"
-if priceLabel and priceLabel:IsA("TextLabel") then
-    rawPrice = priceLabel.Text
-end
+    -- PRICE
+    local rawPrice = priceLabel and priceLabel.Text or "0"
     local cleanPrice = string.gsub(rawPrice, "%D", "")
     ItemPrice = tonumber(cleanPrice) or 0
     pText.Text = formatNumber(ItemPrice)
 
+    -- IMAGE
     if iconLabel then
         itemImg.Image = iconLabel.Image
     else
@@ -972,23 +957,18 @@ end
     clickTrap.Visible = false
     buyFrame.Visible = true
     resetFrameVisuals(buyFrame)
-    
-    -- Much softer Pop-in animation setup
-    buyFrame.Size = UDim2.new(0, 430, 0, 215) 
-    buyFrame.Position = UDim2.new(0.5, 0, 0.5, 0.02) 
-    
-    toggleOverlay(true) 
 
-    local s = Instance.new("Sound", workspace)
-    s.SoundId = "rbxassetid://4612375232"
-    s:Play()
-    
-    -- Smooth spring pop-in
+    toggleOverlay(true)
+
+    local sound = Instance.new("Sound", workspace)
+    sound.SoundId = "rbxassetid://4612375232"
+    sound:Play()
+
     TweenService:Create(buyFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Size = UDim2.new(0, 450, 0, 225),
         Position = UDim2.new(0.5, 0, 0.5, 0)
     }):Play()
-    
+
     local tween = startFill()
     tween.Completed:Connect(function()
         ButtonLoaded = true
